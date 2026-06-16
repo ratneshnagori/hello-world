@@ -152,6 +152,39 @@ class PDF(FPDF):
         self.set_xy(x, y1 + 2)
         self.set_text_color(0, 0, 0)
 
+    def question(self, num, text):
+        if self.get_y() > 250:
+            self.add_page()
+        self.ln(1.5)
+        x = self.get_x()
+        self.set_font("Helvetica", "B", 10.6)
+        self.set_text_color(*BLUE)
+        qprefix = f"Q{num}. "
+        pw = self.get_string_width(qprefix)
+        self.cell(pw, 5.6, clean(qprefix))
+        self.set_text_color(*NAVY)
+        self.multi_cell(0, 5.6, clean(text))
+        self.set_x(x)
+        self.ln(0.8)
+        self.set_text_color(0, 0, 0)
+
+    def answer(self, text):
+        self.set_font("Helvetica", "", 10.2)
+        self.set_text_color(35, 35, 35)
+        self.multi_cell(0, 5.4, clean(text))
+        self.ln(1.2)
+
+    def answer_bullets(self, items):
+        self.set_font("Helvetica", "", 10.2)
+        for it in items:
+            x = self.get_x()
+            self.set_text_color(*BLUE)
+            self.cell(5, 5.4, clean("-"))
+            self.set_text_color(35, 35, 35)
+            self.multi_cell(0, 5.4, clean(it))
+            self.set_x(x)
+        self.ln(1.2)
+
     def simple_table(self, header, rows, widths):
         self.set_font("Helvetica", "B", 9.5)
         self.set_fill_color(*NAVY)
@@ -307,6 +340,52 @@ def render_block(pdf: PDF, block):
         block[1](pdf)
     else:
         raise ValueError(f"unknown block kind: {kind}")
+
+
+def render_answer(pdf, ans):
+    """ans may be: str (paragraph), list[str] (bullets),
+    or (paragraph, [bullets]) tuple, or a list of such parts."""
+    if isinstance(ans, str):
+        pdf.answer(ans)
+    elif isinstance(ans, tuple):
+        para, bullets = ans
+        if para:
+            pdf.answer(para)
+        if bullets:
+            pdf.answer_bullets(bullets)
+    elif isinstance(ans, list):
+        if ans and all(isinstance(x, str) for x in ans):
+            pdf.answer_bullets(ans)
+        else:
+            for part in ans:
+                render_answer(pdf, part)
+    else:
+        raise ValueError(f"bad answer type: {type(ans)}")
+
+
+def build_qa(topic, out_path):
+    """Q&A guide. topic: title, subtitle, blurb, intro (optional),
+    categories=[(title, [(question, answer)])]."""
+    pdf = PDF(running_title=f"{topic['title']} - Interview Q&A")
+    cover(pdf, topic["title"], topic["subtitle"], topic["blurb"])
+    pdf.add_page()
+    pdf.insert_toc_placeholder(render_toc, pages=1)
+
+    if topic.get("intro"):
+        pdf.page_title("How to Use This Guide")
+        pdf.body(topic["intro"])
+        pdf.ln(1)
+
+    qnum = 0
+    for i, (cat_title, qas) in enumerate(topic["categories"], start=1):
+        pdf.h1(i, cat_title)
+        for q, a in qas:
+            qnum += 1
+            pdf.question(qnum, q)
+            render_answer(pdf, a)
+
+    pdf.output(out_path)
+    return pdf.page_no()
 
 
 def build_pdf(topic, out_path):
